@@ -14,6 +14,10 @@
         <h1>{{ config('app.name') }}</h1>
         <p class="login-subtitle">Sign in to access your POS Dashboard</p>
 
+        @if (session('status'))
+            <div class="success-banner" style="margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; background: #dcfce7; color: #166534; font-size: 14px;">{{ session('status') }}</div>
+        @endif
+
         <form id="login-form" novalidate>
             <label for="email">Email</label>
             <input type="email" id="email" name="email" required autofocus placeholder="you@store.com">
