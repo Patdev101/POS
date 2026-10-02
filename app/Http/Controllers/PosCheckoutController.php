@@ -19,6 +19,14 @@ class PosCheckoutController extends Controller
         InventoryService $inventoryService,
         PosAuditLogger $auditLogger
     ): JsonResponse {
+        // Only cashiers ring up sales; managers and admins supervise from
+        // their own dashboards.
+        if ($request->user()?->isManager()) {
+            return response()->json([
+                'message' => 'Only cashier accounts can process sales.',
+            ], 403);
+        }
+
         $discountTypes = (array) config('pos.discount_types', []);
 
         $validated = $request->validate([

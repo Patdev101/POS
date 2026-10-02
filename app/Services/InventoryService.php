@@ -45,7 +45,24 @@ class InventoryService
             );
         }
 
-        return $response->json();
+        return $this->jsonList($response);
+    }
+
+    /**
+     * A 200 that isn't a JSON list means INVENTORY_API_URL points at some
+     * other app (e.g. another dev server on that port) — say so plainly.
+     */
+    private function jsonList(\Illuminate\Http\Client\Response $response): array
+    {
+        $data = $response->json();
+
+        if (!is_array($data)) {
+            throw new RuntimeException(
+                'The address in INVENTORY_API_URL (' . $this->baseUrl . ') is not the Inventory system. Check the URL and port.'
+            );
+        }
+
+        return $data;
     }
 
     /**
@@ -115,7 +132,7 @@ class InventoryService
             );
         }
 
-        return $response->json();
+        return $this->jsonList($response);
     }
 
     public function removeStock(

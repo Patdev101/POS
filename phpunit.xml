@@ -27,6 +27,8 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
+        <env name="INVENTORY_API_URL" value="http://127.0.0.1:8001"/>
+        <env name="INVENTORY_API_TOKEN" value="test-token"/>
         <env name="POS_TAX_RATE" value="0"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

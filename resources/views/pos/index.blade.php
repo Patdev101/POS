@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config('app.name') }} - Point of Sale</title>
-    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}?v={{ filemtime(public_path('pos-assets/style.css')) }}">
 </head>
 
 <body class="pos-body">
@@ -45,25 +45,29 @@
         <!-- STATS -->
         <p id="stats-date-label" class="stats-date-label"></p>
         <div class="stats-row">
-            <div class="stat-card stat-card-neutral">
-                <div class="stat-icon">✓</div>
+            <div class="stat-card stat-card-primary">
+                <div class="stat-icon" aria-hidden="true">₱</div>
+                <div>
+                    <div class="stat-label">Total Sales</div>
+                    <div class="stat-value" id="stat-total">₱0.00</div>
+                </div>
+            </div>
+            <div class="stat-card stat-card-success">
+                <div class="stat-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                </div>
                 <div>
                     <div class="stat-label">Completed Sales</div>
                     <div class="stat-value" id="stat-completed">0</div>
                 </div>
             </div>
-            <div class="stat-card stat-card-primary">
-                <div class="stat-icon">₱</div>
-                <div>
-                    <div class="stat-label">Total Sales</div>
-                    <div class="stat-value stat-primary" id="stat-total">₱0.00</div>
-                </div>
-            </div>
             <div class="stat-card stat-card-danger">
-                <div class="stat-icon">✕</div>
+                <div class="stat-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+                </div>
                 <div>
                     <div class="stat-label">Voided Sales</div>
-                    <div class="stat-value stat-danger" id="stat-voided">0</div>
+                    <div class="stat-value" id="stat-voided">0</div>
                 </div>
             </div>
         </div>
@@ -171,7 +175,7 @@
                     <div class="two-col">
                         <div>
                             <label for="opening-cash-input">Opening cash</label>
-                            <input type="number" id="opening-cash-input" min="0" step="0.01" value="0">
+                            <input type="number" id="opening-cash-input" min="0.01" step="0.01" inputmode="decimal" placeholder="Count your drawer" required>
                         </div>
                         <div>
                             <label for="closing-cash-input">Closing cash</label>

@@ -157,9 +157,106 @@ const Pos = (function () {
 
     /* ---------------- Login page ---------------- */
 
+    // Each role has its own home: cashiers sell at the till, managers run
+    // the Manager Console, admins get the Admin Dashboard. Only cashiers
+    // use the selling screen.
+    function isAdminRole() {
+        const user = getUser();
+        return !!(user && user.role === 'admin');
+    }
+
+    function homePath() {
+        const user = getUser();
+        const role = user ? user.role : '';
+
+        if (role === 'admin') return '/pos/admin';
+        if (role === 'manager') return '/pos/manager';
+        return '/pos';
+    }
+
+    // Managers and admins get the same menu, in the same order, on every
+    // page — with the page they're on highlighted. Cashiers keep the
+    // page's own links.
+    function applyRoleNavigation() {
+        const user = getUser();
+
+        if (!user || user.must_change_password || (user.role !== 'admin' && user.role !== 'manager')) {
+            return;
+        }
+
+        const admin = user.role === 'admin';
+        const path = window.location.pathname.replace(/\/+$/, '');
+        const actions = document.querySelector('.header-actions');
+
+        if (!actions) {
+            return;
+        }
+
+        const items = admin
+            ? [['/pos/admin', 'Dashboard'], ['/pos/manager', 'Sales Reports']]
+            : [['/pos/manager', 'Console']];
+
+        items.push(['/pos/manager/users', 'Users'], ['/pos/manager/audit-log', 'Audit Log'], ['/pos/account', 'My Account']);
+
+        actions.querySelectorAll('a.header-btn').forEach(function (link) {
+            link.remove();
+        });
+
+        const anchor = actions.querySelector('.logged-in-badge') || actions.firstChild;
+
+        items.forEach(function (item) {
+            const link = document.createElement('a');
+            link.className = 'header-btn' + (item[0] === path ? ' is-current' : '');
+            link.setAttribute('href', item[0]);
+            link.textContent = item[1];
+
+            if (item[0] === path) {
+                link.setAttribute('aria-current', 'page');
+            }
+
+            actions.insertBefore(link, anchor);
+        });
+
+        if (!admin) {
+            return;
+        }
+
+        document.querySelectorAll('.header-eyebrow').forEach(function (eyebrow) {
+            if (eyebrow.textContent.trim() === 'MANAGER') {
+                eyebrow.textContent = 'ADMIN';
+            }
+        });
+
+        if (path === '/pos/manager') {
+            const title = document.querySelector('.header-title');
+            if (title) title.textContent = 'Sales Reports';
+        }
+    }
+
+    // Shared page-intro text: "Welcome back, <first name>" and today's date.
+    function applyPageIntro() {
+        const user = getUser();
+        const firstName = user && user.name ? user.name.trim().split(/\s+/)[0] : '';
+
+        document.querySelectorAll('[data-greeting]').forEach(function (el) {
+            el.textContent = firstName ? 'Welcome back, ' + firstName : 'Welcome back';
+        });
+
+        document.querySelectorAll('[data-today]').forEach(function (el) {
+            el.textContent = new Date().toLocaleDateString(undefined, {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        applyRoleNavigation();
+        applyPageIntro();
+    });
+
     function initLoginPage() {
         if (getToken()) {
-            window.location.href = '/pos';
+            window.location.href = homePath();
             return;
         }
 
@@ -260,7 +357,7 @@ const Pos = (function () {
 
                 window.location.href = (data.user && data.user.must_change_password)
                     ? '/pos/account'
-                    : '/pos';
+                    : homePath();
             } catch (err) {
                 errorBanner.textContent = 'Unable to reach the server. Please try again.';
                 errorBanner.hidden = false;
@@ -284,7 +381,7 @@ const Pos = (function () {
         visibleProducts: [],
     };
 
-    function initPosPage() {
+    function initPosPage(closingOnly) {
         if (!getToken()) {
             window.location.href = '/pos/login';
             return;
@@ -294,12 +391,27 @@ const Pos = (function () {
             return;
         }
 
+        // Managers and admins don't sell. The one exception: someone who
+        // still has a register open from before may come here to close it.
+        if (isManagerRole() && !closingOnly) {
+            apiFetch('/cash-sessions/current')
+                .then(function (response) {
+                    if (response && response.data) {
+                        initPosPage(true);
+                    } else {
+                        window.location.href = homePath();
+                    }
+                })
+                .catch(function () {
+                    window.location.href = homePath();
+                });
+            return;
+        }
+
+        state.closingOnly = !!closingOnly;
+
         const user = getUser();
         document.getElementById('cashier-name').textContent = 'Cashier: ' + (user ? user.name : '');
-
-        if (isManagerRole()) {
-            document.getElementById('manager-console-link').hidden = false;
-        }
 
         document.getElementById('logout-btn').addEventListener('click', function () {
             if (state.cashSession) {
@@ -495,6 +607,10 @@ const Pos = (function () {
         document.getElementById('page-loader').hidden = true;
         document.getElementById('app').hidden = false;
 
+        if (state.closingOnly) {
+            showError('Only cashiers can sell. Your register is still open — enter your counted cash and click "Close session" to finish.');
+        }
+
         startProductAutoRefresh();
     }
 
@@ -534,6 +650,89 @@ const Pos = (function () {
             if (!document.hidden) {
                 loadProducts(document.getElementById('search-input').value);
             }
+        });
+    }
+
+    /* ---------------- Admin dashboard page ---------------- */
+
+    function initAdminPage() {
+        if (!getToken()) {
+            window.location.href = '/pos/login';
+            return;
+        }
+
+        if (redirectIfMustChangePassword()) {
+            return;
+        }
+
+        if (!isAdminRole()) {
+            window.location.href = homePath();
+            return;
+        }
+
+        const user = getUser();
+        document.getElementById('cashier-name').textContent = user ? user.name : '';
+
+        document.getElementById('logout-btn').addEventListener('click', function () {
+            logout();
+        });
+
+        const today = todayDateString();
+        const weekStartDate = new Date();
+        weekStartDate.setDate(weekStartDate.getDate() - 6);
+        const weekStart = weekStartDate.getFullYear() + '-' +
+            String(weekStartDate.getMonth() + 1).padStart(2, '0') + '-' +
+            String(weekStartDate.getDate()).padStart(2, '0');
+
+        function setText(id, value) {
+            document.getElementById(id).textContent = value;
+        }
+
+        function salesSummary(from, to) {
+            return apiFetch('/sales/summary?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + '&all=1')
+                .then(function (response) { return response.meta || {}; });
+        }
+
+        Promise.allSettled([
+            salesSummary(today, today).then(function (meta) {
+                setText('admin-stat-total', money(meta.total_amount || 0));
+                setText('admin-stat-completed', meta.total_sales || 0);
+                setText('admin-stat-voided', meta.voided_sales || 0);
+            }),
+            salesSummary(weekStart, today).then(function (meta) {
+                setText('admin-stat-week', money(meta.total_amount || 0));
+            }),
+            apiFetch('/users').then(function (response) {
+                const users = response.data || [];
+                const active = users.filter(function (u) { return u.is_active; });
+
+                setText('admin-stat-active-users', active.length);
+                setText('admin-stat-inactive-hint', users.length - active.length);
+
+                ['admin', 'manager', 'cashier'].forEach(function (role) {
+                    const count = active.filter(function (u) { return u.role === role; }).length;
+                    setText('admin-team-' + role + 's', count);
+                    document.getElementById('admin-seg-' + role).style.flex = count + ' 1 0';
+                    document.getElementById('admin-seg-' + role).hidden = count === 0;
+                });
+            }),
+            apiFetch('/audit-log?page=1').then(function (response) {
+                const entries = (response.data || []).slice(0, 8);
+
+                document.getElementById('admin-activity-table').hidden = entries.length === 0;
+                document.getElementById('admin-activity-empty').hidden = entries.length > 0;
+
+                if (entries.length) {
+                    renderAuditLogTable(entries);
+                }
+            }),
+        ]).then(function (results) {
+            if (results.some(function (r) { return r.status === 'rejected'; })) {
+                showError('Some dashboard data could not be loaded. Refresh to try again.');
+            }
+
+            document.getElementById('page-loader').hidden = true;
+            document.getElementById('app').hidden = false;
         });
     }
 
@@ -2134,7 +2333,7 @@ const Pos = (function () {
             closeBtn.disabled = true;
 
             openingInput.disabled = false;
-            openingInput.value = 0;
+            openingInput.value = '';
 
             closingInput.disabled = true;
         }
@@ -2164,7 +2363,16 @@ const Pos = (function () {
         const errorBanner = document.getElementById('register-error');
         errorBanner.hidden = true;
 
-        const openingCash = parseFloat(document.getElementById('opening-cash-input').value || '0');
+        const openingInput = document.getElementById('opening-cash-input');
+        const openingCash = parseFloat(openingInput.value);
+
+        if (openingInput.value.trim() === '' || !(openingCash > 0)) {
+            errorBanner.textContent = 'Enter your opening cash before opening a session — count the money in your drawer and type the amount.';
+            errorBanner.hidden = false;
+            openingInput.focus();
+            return;
+        }
+
         const openBtn = document.getElementById('open-register-btn');
         openBtn.disabled = true;
         openBtn.classList.add('is-loading');
@@ -3563,7 +3771,7 @@ const Pos = (function () {
             // The forced-change lock is now lifted — send them back in.
             if (user && document.getElementById('forced-change-notice') && !document.getElementById('forced-change-notice').hidden) {
                 window.setTimeout(function () {
-                    window.location.href = '/pos';
+                    window.location.href = homePath();
                 }, 1200);
             }
         } catch (err) {
@@ -3588,6 +3796,7 @@ const Pos = (function () {
         initLoginPage: initLoginPage,
         initPosPage: initPosPage,
         initManagerPage: initManagerPage,
+        initAdminPage: initAdminPage,
         initUsersPage: initUsersPage,
         initAccountPage: initAccountPage,
         initAuditLogPage: initAuditLogPage,

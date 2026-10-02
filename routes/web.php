@@ -40,6 +40,10 @@ Route::get('/pos', function () {
     ]);
 });
 
+Route::get('/pos/admin', function () {
+    return view('pos.admin');
+});
+
 Route::get('/pos/manager', function () {
     return view('pos.manager');
 });

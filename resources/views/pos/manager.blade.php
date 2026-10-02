@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config('app.name') }} - Manager Console</title>
-    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}?v={{ filemtime(public_path('pos-assets/style.css')) }}">
 </head>
 
 <body class="pos-body">
@@ -44,19 +44,40 @@
         <div id="error-banner" class="error-banner" hidden></div>
 
         <!-- STATS -->
+        <div class="page-intro">
+            <div>
+                <h1 data-greeting>Welcome back</h1>
+                <p>Sales, cashier performance and product trends across all registers.</p>
+            </div>
+            <span class="page-intro-date" data-today></span>
+        </div>
+
         <p id="stats-date-label" class="stats-date-label"></p>
         <div class="stats-row">
-            <div class="stat-card">
-                <div class="stat-label">Completed Sales</div>
-                <div class="stat-value" id="stat-completed">0</div>
+            <div class="stat-card stat-card-primary">
+                <div class="stat-icon" aria-hidden="true">₱</div>
+                <div>
+                    <div class="stat-label">Total Sales</div>
+                    <div class="stat-value" id="stat-total">₱0.00</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Total Sales</div>
-                <div class="stat-value stat-primary" id="stat-total">₱0.00</div>
+            <div class="stat-card stat-card-success">
+                <div class="stat-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                </div>
+                <div>
+                    <div class="stat-label">Completed Sales</div>
+                    <div class="stat-value" id="stat-completed">0</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Voided Sales</div>
-                <div class="stat-value stat-danger" id="stat-voided">0</div>
+            <div class="stat-card stat-card-danger">
+                <div class="stat-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+                </div>
+                <div>
+                    <div class="stat-label">Voided Sales</div>
+                    <div class="stat-value" id="stat-voided">0</div>
+                </div>
             </div>
         </div>
 
@@ -111,7 +132,7 @@
                             <button type="button" class="period-toggle-btn" data-scope="month" id="cashier-perf-month-btn">Month</button>
                         </div>
                     </div>
-                    <p id="cashier-perf-range-label" class="stats-date-label" style="padding-left:0;margin-top:0;"></p>
+                    <p id="cashier-perf-range-label" class="range-label"></p>
                     <div class="table-scroll">
                         <table class="reports-table">
                             <thead>
@@ -157,7 +178,7 @@
                 </div>
             </div>
 
-            <p id="analytics-range-label" class="stats-date-label" style="padding-left:0;margin-top:0;"></p>
+            <p id="analytics-range-label" class="range-label"></p>
 
             <div class="breakdown-grid">
 

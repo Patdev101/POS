@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config('app.name') }} - Audit Log</title>
-    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}?v={{ filemtime(public_path('pos-assets/style.css')) }}">
 </head>
 
 <body class="pos-body">
@@ -36,6 +36,13 @@
 
         <!-- ERROR / NOTICE -->
         <div id="error-banner" class="error-banner" hidden></div>
+
+        <div class="page-intro">
+            <div>
+                <h1>Activity history</h1>
+                <p>Every sale, void, refund, register open or close, and account change — with who did it and when. Filter by event or date to narrow it down.</p>
+            </div>
+        </div>
 
         <!-- AUDIT LOG -->
         <section class="reports-section" style="margin-top:20px;">

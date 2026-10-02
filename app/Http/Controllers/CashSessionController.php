@@ -59,6 +59,12 @@ class CashSessionController extends Controller
             ], 401);
         }
 
+        if ($user->isManager()) {
+            return response()->json([
+                'message' => 'Only cashier accounts can open a register.',
+            ], 403);
+        }
+
         $existingOpenSession = CashSession::query()
             ->where('user_id', $user->id)
             ->where('status', 'open')
@@ -72,13 +78,16 @@ class CashSessionController extends Controller
         }
 
         $validated = $request->validate([
-            'opening_cash' => ['nullable', 'numeric', 'min:0'],
+            'opening_cash' => ['required', 'numeric', 'gt:0', 'max:9999999'],
+        ], [
+            'opening_cash.required' => 'Enter your opening cash before opening a session.',
+            'opening_cash.gt' => 'Opening cash must be more than zero.',
         ]);
 
         $cashSession = CashSession::create([
             'user_id' => $user->id,
             'location_id' => (int) config('pos.location_id'),
-            'opening_cash' => $validated['opening_cash'] ?? 0,
+            'opening_cash' => $validated['opening_cash'],
             'status' => 'open',
             'opened_at' => now(),
         ]);

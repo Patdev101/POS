@@ -3433,3 +3433,310 @@ font-weight: 800;
 }
 
 }
+
+/* =========================================================
+SHARED UI SYSTEM
+One look for every screen (cashier, manager, admin): page intro,
+stat cards, shortcut cards, empty states, focus and current-page
+states. Kept last so it wins over the older per-page rules above.
+========================================================= */
+
+:where(a, button, input, select, textarea):focus-visible {
+outline: 2px solid var(--primary);
+outline-offset: 2px;
+}
+
+.header-btn.is-current {
+background: var(--navy);
+border-color: var(--navy);
+color: #ffffff;
+}
+
+/* ---- Page intro (title line under the top bar) ---- */
+
+.page-intro {
+max-width: var(--workspace-width);
+margin: 24px auto 0;
+padding: 0 24px;
+display: flex;
+align-items: flex-end;
+justify-content: space-between;
+flex-wrap: wrap;
+gap: 12px 16px;
+}
+
+.page-intro h1 {
+margin: 0;
+font-size: 24px;
+letter-spacing: -0.02em;
+color: var(--navy);
+}
+
+.page-intro p {
+margin: 4px 0 0;
+font-size: 14px;
+color: var(--muted);
+max-width: 70ch;
+}
+
+.page-intro-date {
+font-size: 13px;
+font-weight: 600;
+color: var(--navy);
+background: var(--panel);
+border: 1px solid var(--border);
+border-radius: 999px;
+padding: 7px 14px;
+}
+
+.page-intro-date:empty {
+display: none;
+}
+
+/* ---- Stat cards ---- */
+
+.stats-row.cols-4 {
+grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-card {
+align-items: flex-start;
+padding: 18px 20px;
+}
+
+.stat-icon {
+border-radius: 12px;
+}
+
+.stat-icon svg {
+width: 22px;
+height: 22px;
+}
+
+.stat-card-success .stat-icon {
+background: var(--green-soft);
+color: #15803d;
+}
+
+.stat-card-navy .stat-icon {
+background: #e6ecf2;
+color: var(--navy);
+}
+
+.stat-label {
+font-size: 12px;
+font-weight: 700;
+text-transform: uppercase;
+letter-spacing: 0.04em;
+margin-bottom: 4px;
+}
+
+.stat-value {
+font-size: 28px;
+line-height: 1.1;
+color: var(--navy);
+font-variant-numeric: tabular-nums;
+}
+
+.stat-hint {
+margin-top: 6px;
+font-size: 12px;
+color: var(--muted);
+}
+
+.stat-hint strong {
+color: var(--text);
+}
+
+/* ---- Shortcut cards ---- */
+
+.link-cards {
+display: grid;
+grid-template-columns: repeat(3, minmax(0, 1fr));
+gap: 16px;
+}
+
+.link-card {
+display: flex;
+align-items: center;
+gap: 14px;
+padding: 18px 20px;
+text-decoration: none;
+color: inherit;
+background: var(--panel);
+border: 1px solid var(--border);
+border-radius: 12px;
+box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.link-card:hover,
+.link-card:focus-visible {
+border-color: var(--primary);
+transform: translateY(-2px);
+box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.link-card-icon {
+flex: none;
+width: 46px;
+height: 46px;
+border-radius: 12px;
+display: grid;
+place-items: center;
+background: var(--navy);
+color: #ffffff;
+}
+
+.link-card-icon svg {
+width: 22px;
+height: 22px;
+}
+
+.link-card-text {
+flex: 1;
+min-width: 0;
+}
+
+.link-card-text strong {
+display: block;
+font-size: 15px;
+color: var(--navy);
+}
+
+.link-card-text span {
+display: block;
+margin-top: 3px;
+font-size: 13px;
+color: var(--muted);
+}
+
+.link-card-arrow {
+flex: none;
+font-size: 20px;
+color: var(--muted);
+}
+
+.link-card:hover .link-card-arrow {
+color: var(--primary-dark);
+}
+
+/* ---- Empty states ---- */
+
+.empty-state {
+padding: 44px 20px;
+text-align: center;
+color: var(--muted);
+}
+
+.empty-state[hidden] {
+display: none;
+}
+
+.empty-state svg {
+width: 34px;
+height: 34px;
+color: #94a3b8;
+}
+
+.empty-state strong {
+display: block;
+margin-top: 10px;
+font-size: 15px;
+color: var(--navy);
+}
+
+.empty-state span {
+display: block;
+margin-top: 4px;
+font-size: 13px;
+}
+
+.table-empty {
+padding: 36px 16px;
+font-size: 14px;
+}
+
+/* ---- "Showing ..." range labels: line up with the heading above ---- */
+
+.range-label {
+margin: -4px 0 12px;
+font-size: 12px;
+font-weight: 600;
+color: var(--muted);
+}
+
+.range-label:empty {
+display: none;
+}
+
+.table-card > .range-label {
+margin: 0 0 12px;
+padding: 0 16px;
+}
+
+.section-heading-row .section-eyebrow,
+.report-heading-row .section-eyebrow {
+margin: 0;
+}
+
+.breakdown-grid .table-card .section-heading-row {
+padding: 16px 16px 0;
+margin-bottom: 10px;
+}
+
+/* ---- Tables: numbers line up, rows are easier to scan ---- */
+
+.reports-table td {
+font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1000px) {
+
+.stats-row.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.link-cards {
+    grid-template-columns: 1fr;
+}
+
+}
+
+@media (max-width: 850px) {
+
+.page-intro {
+    padding: 0 16px;
+}
+
+.page-intro h1 {
+    font-size: 20px;
+}
+
+}
+
+@media (max-width: 520px) {
+
+.stats-row.cols-4 {
+    grid-template-columns: 1fr;
+}
+
+.stat-value {
+    font-size: 24px;
+}
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+.link-card,
+.stat-card {
+    transition: none;
+}
+
+.link-card:hover,
+.stat-card:hover {
+    transform: none;
+}
+
+}

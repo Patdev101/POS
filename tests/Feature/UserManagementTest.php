@@ -463,4 +463,58 @@ class UserManagementTest extends TestCase
             'password_confirmation' => 'sneaky-password-123',
         ])->assertStatus(422);
     }
+
+    public function test_only_cashiers_can_open_a_register_or_process_a_sale(): void
+    {
+        foreach (['admin', 'manager'] as $role) {
+            $user = User::factory()->create([
+                'role' => $role,
+                'password' => Hash::make('password123'),
+            ]);
+
+            $this->loginAs($user);
+
+            $this->postJson('/api/cash-sessions/open', ['opening_cash' => 500])->assertStatus(403);
+            $this->postJson('/api/pos/checkout', [
+                'payment_method' => 'cash',
+                'items' => [['product_id' => 1, 'quantity' => 1]],
+            ])->assertStatus(403);
+
+            $this->app['auth']->forgetGuards();
+        }
+
+        $this->assertDatabaseCount('cash_sessions', 0);
+    }
+
+    public function test_cashier_can_still_open_a_register(): void
+    {
+        $cashier = User::factory()->create([
+            'role' => 'cashier',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $this->loginAs($cashier);
+        $this->postJson('/api/cash-sessions/open', [])->assertStatus(422)->assertJsonValidationErrors('opening_cash');
+        $this->postJson('/api/cash-sessions/open', ['opening_cash' => 0])->assertStatus(422);
+        $this->postJson('/api/cash-sessions/open', ['opening_cash' => 500])->assertSuccessful();
+    }
+
+    public function test_admin_dashboard_page_is_served(): void
+    {
+        $this->get('/pos/admin')->assertOk()->assertSee('Admin Dashboard');
+    }
+
+    public function test_admin_still_has_the_admin_dashboard_data(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $this->loginAs($admin);
+
+        $this->getJson('/api/sales?all=1')->assertOk();
+        $this->getJson('/api/users')->assertOk();
+        $this->getJson('/api/audit-log')->assertOk();
+    }
 }

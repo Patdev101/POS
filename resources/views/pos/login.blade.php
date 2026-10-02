@@ -6,7 +6,7 @@
     <title>{{ config('app.name') }} - Cashier Login</title>
     
     {{-- Fixed: Uses asset() helper to respect ASSET_URL and base subdirectory --}}
-    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}">
+    <link rel="stylesheet" href="{{ asset('pos-assets/style.css') }}?v={{ filemtime(public_path('pos-assets/style.css')) }}">
 </head>
 <body class="login-body">
     <div class="login-panel">
