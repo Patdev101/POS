@@ -86,7 +86,9 @@ class CashSessionController extends Controller
 
         $cashSession = CashSession::create([
             'user_id' => $user->id,
-            'location_id' => (int) config('pos.location_id'),
+            // The location assigned to this cashier; the terminal's configured one
+            // only for an account that has none yet.
+            'location_id' => $user->location_id ? (int) $user->location_id : (int) config('pos.location_id'),
             'opening_cash' => $validated['opening_cash'],
             'status' => 'open',
             'opened_at' => now(),

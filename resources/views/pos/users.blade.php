@@ -71,14 +71,15 @@
         <div class="page-intro">
             <div>
                 <h1>Staff accounts</h1>
-                <p>Add accounts, set each person's role, reset a forgotten password, or deactivate someone who has left. Use the last row of the table to add a new user.</p>
+                <p>Add accounts, set each person's role, reset a forgotten password, or deactivate someone who has left. Use the Add User button to create a new account.</p>
             </div>
         </div>
 
         <!-- USERS -->
         <section class="reports-section" style="margin-top:20px;">
-            <div class="section-heading-row">
+            <div class="section-heading-row report-heading-row">
                 <p class="section-eyebrow">All Users</p>
+                <button type="button" id="add-user-open-btn" class="primary-action-btn">+ Add User</button>
             </div>
 
             <div class="table-card">
@@ -88,6 +89,7 @@
                             <tr>
                                 <th>Name</th>
                                 <th>Email</th>
+                                <th>Company / Location</th>
                                 <th>Password</th>
                                 <th>Role</th>
                                 <th>Status</th>
@@ -96,34 +98,69 @@
                         </thead>
                         <tbody id="users-table-body">
                             <tr>
-                                <td colspan="6" class="table-empty">Loading users...</td>
+                                <td colspan="7" class="table-empty">Loading users...</td>
                             </tr>
                         </tbody>
-                        <tfoot>
-                            <tr class="add-user-row">
-                                <td><input type="text" id="new-user-name" form="create-user-form" placeholder="Full name" required></td>
-                                <td><input type="email" id="new-user-email" form="create-user-form" placeholder="email@store.com" required></td>
-                                <td><input type="password" id="new-user-password" form="create-user-form" placeholder="Min. 8 characters" minlength="8" required></td>
-                                <td>
-                                    <select id="new-user-role" form="create-user-form">
-                                        <option value="cashier">Cashier</option>
-                                        <option value="manager" id="new-user-role-manager-option" hidden>Manager</option>
-                                        <option value="admin" id="new-user-role-admin-option" hidden>Admin</option>
-                                    </select>
-                                </td>
-                                <td><span class="role-badge status-completed">Active</span></td>
-                                <td><button type="submit" form="create-user-form" class="secondary-btn">Add user</button></td>
-                            </tr>
-                        </tfoot>
                     </table>
                 </div>
 
-                <form id="create-user-form"></form>
-
-                <div id="create-user-error" class="modal-error" hidden></div>
             </div>
         </section>
 
+    </div>
+
+    <!-- ADD USER MODAL -->
+    <div id="add-user-modal" class="modal-overlay" hidden>
+        <div class="register-modal">
+            <h2 style="margin-top:0;">Add User</h2>
+
+            <form id="add-user-form" novalidate>
+                <div class="account-field">
+                    <label for="add-user-name">Full name</label>
+                    <input type="text" id="add-user-name" maxlength="255" required>
+                </div>
+
+                <div class="account-field">
+                    <label for="add-user-email">Email</label>
+                    <input type="email" id="add-user-email" placeholder="email@store.com" required>
+                </div>
+
+                <div class="account-field">
+                    <label for="add-user-password">Temporary password</label>
+                    <input type="password" id="add-user-password" placeholder="Min. 8 characters" minlength="8" required>
+                </div>
+
+                <div class="account-field">
+                    <label for="add-user-role">Role</label>
+                    <select id="add-user-role">
+                        <option value="cashier">Cashier</option>
+                        <option value="manager" data-admin-only hidden>Manager</option>
+                        <option value="admin" data-admin-only hidden>Admin</option>
+                    </select>
+                </div>
+
+                <div class="account-field">
+                    <label for="add-user-company">Company</label>
+                    <select id="add-user-company">
+                        <option value="">Select a company</option>
+                    </select>
+                </div>
+
+                <div class="account-field">
+                    <label for="add-user-location">Location</label>
+                    <select id="add-user-location" disabled>
+                        <option value="">Select a company first</option>
+                    </select>
+                </div>
+
+                <div id="add-user-error" class="modal-error" hidden></div>
+
+                <div class="modal-actions">
+                    <button type="button" id="add-user-cancel-btn" class="secondary-btn">Cancel</button>
+                    <button type="submit" class="secondary-btn">Create User</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- EDIT USER MODAL -->
@@ -142,6 +179,20 @@
                 <div class="account-field">
                     <label for="edit-user-email">Email</label>
                     <input type="email" id="edit-user-email" required>
+                </div>
+
+                <div class="account-field">
+                    <label for="edit-user-company">Company</label>
+                    <select id="edit-user-company">
+                        <option value="">No company</option>
+                    </select>
+                </div>
+
+                <div class="account-field">
+                    <label for="edit-user-location">Location</label>
+                    <select id="edit-user-location">
+                        <option value="">No location</option>
+                    </select>
                 </div>
 
                 <div id="edit-user-error" class="modal-error" hidden></div>

@@ -18,6 +18,12 @@ class AccountController extends Controller
     {
         $user = $request->user();
 
+        if (!$user->isManager()) {
+            return response()->json([
+                'message' => 'Only a manager or admin can change names and email addresses. Ask one of them to update it for you.',
+            ], 403);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
         ]);
@@ -45,6 +51,12 @@ class AccountController extends Controller
     public function updateEmail(Request $request): JsonResponse
     {
         $user = $request->user();
+
+        if (!$user->isManager()) {
+            return response()->json([
+                'message' => 'Only a manager or admin can change names and email addresses. Ask one of them to update it for you.',
+            ], 403);
+        }
 
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255', 'unique:users,email,' . $user->id],

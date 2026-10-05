@@ -57,6 +57,8 @@
                 <p class="section-eyebrow">Profile</p>
             </div>
 
+            <p id="profile-locked-note" class="range-label" hidden>Your name and email can be changed after you set your new password below.</p>
+
             <div class="table-card account-form-card">
                 <form id="change-name-form" class="account-form">
                     <div class="account-form-row">

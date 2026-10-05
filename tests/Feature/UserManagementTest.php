@@ -499,6 +499,104 @@ class UserManagementTest extends TestCase
         $this->postJson('/api/cash-sessions/open', ['opening_cash' => 500])->assertSuccessful();
     }
 
+    public function test_updates_work_when_sent_as_post_with_a_method_override(): void
+    {
+        // Hosts that block PUT/PATCH/DELETE: the POS sends POST + this header.
+        $cashier = User::factory()->create([
+            'role' => 'cashier',
+            'password' => Hash::make('password123'),
+            'must_change_password' => true,
+        ]);
+
+        $this->loginAs($cashier);
+
+        // The live "is my current password right?" check must work while a
+        // new password is still required.
+        $this->postJson('/api/account/verify-current-password', ['current_password' => 'password123'])
+            ->assertOk()->assertJson(['valid' => true]);
+
+        $this->postJson('/api/account/password', [
+            'current_password' => 'password123',
+            'password' => 'brand-new-pass-1',
+            'password_confirmation' => 'brand-new-pass-1',
+        ], ['X-HTTP-Method-Override' => 'PUT'])->assertOk();
+
+        $this->assertTrue(Hash::check('brand-new-pass-1', $cashier->fresh()->password));
+        $this->assertFalse((bool) $cashier->fresh()->must_change_password);
+    }
+
+    public function test_a_user_can_be_created_with_a_company_and_location(): void
+    {
+        \Illuminate\Support\Facades\Http::fake([
+            'http://127.0.0.1:8001/api/locations' => \Illuminate\Support\Facades\Http::response([
+                ['id' => 7, 'name' => 'MAIN STORE', 'code' => 'MS', 'company' => ['id' => 2, 'name' => 'ACME TRADING']],
+            ]),
+        ]);
+
+        $admin = User::factory()->create(['role' => 'admin', 'password' => Hash::make('password123')]);
+        $this->loginAs($admin);
+
+        $this->getJson('/api/pos/locations')->assertOk()
+            ->assertJsonPath('data.0.company_name', 'ACME TRADING');
+
+        $this->postJson('/api/users', [
+            'name' => 'New Cashier', 'email' => 'new.cashier@example.com',
+            'password' => 'temp-pass-123', 'role' => 'cashier', 'location_id' => 7,
+        ])->assertCreated()->assertJsonPath('data.location_name', 'MAIN STORE');
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'new.cashier@example.com', 'location_id' => 7,
+            'location_name' => 'MAIN STORE', 'company_name' => 'ACME TRADING',
+        ]);
+
+        $this->postJson('/api/users', [
+            'name' => 'Ghost', 'email' => 'ghost@example.com',
+            'password' => 'temp-pass-123', 'location_id' => 999,
+        ])->assertStatus(422);
+
+        $this->postJson('/api/users', [
+            'name' => 'No Location', 'email' => 'noloc@example.com', 'password' => 'temp-pass-123',
+        ])->assertCreated();
+    }
+
+    public function test_location_assignment_scopes_sales_sessions_and_user_management(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response([['id' => 7, 'name' => 'MAIN', 'code' => 'M', 'company' => ['id' => 1, 'name' => 'ACME']]])]);
+
+        $managerA = User::factory()->create(['role' => 'manager', 'password' => Hash::make('password123'), 'location_id' => 7, 'location_name' => 'MAIN']);
+        $cashierA = User::factory()->create(['role' => 'cashier', 'location_id' => 7, 'location_name' => 'MAIN']);
+        $cashierB = User::factory()->create(['role' => 'cashier', 'location_id' => 9, 'location_name' => 'OTHER']);
+        $admin = User::factory()->create(['role' => 'admin', 'password' => Hash::make('password123')]);
+
+        foreach ([[$cashierA, 7, 100], [$cashierB, 9, 250]] as [$cashier, $loc, $total]) {
+            $sale = \App\Models\Sale::create([
+                'user_id' => $cashier->id, 'location_id' => $loc, 'sale_number' => 'S-' . $loc, 'subtotal' => $total,
+                'discount' => 0, 'tax' => 0, 'total' => $total, 'status' => 'completed', 'completed_at' => now(),
+            ]);
+        }
+
+        // A manager sees only their own location's sales and people.
+        $this->loginAs($managerA);
+        $this->getJson('/api/sales?all=1')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.location_id', 7);
+        $this->getJson('/api/sales/summary?all=1')->assertJsonPath('meta.total_amount', 100);
+        $emails = collect($this->getJson('/api/users')->assertOk()->json('data'))->pluck('email');
+        $this->assertTrue($emails->contains($cashierA->email));
+        $this->assertFalse($emails->contains($cashierB->email));
+        $this->postJson('/api/users/' . $cashierB->id . '/deactivate')->assertForbidden();
+
+        // An admin sees everything.
+        $this->loginAs($admin);
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/sales?all=1')->assertJsonCount(2, 'data');
+        $this->getJson('/api/sales/summary?all=1')->assertJsonPath('meta.total_amount', 350);
+
+        // A cashier's register opens at their assigned location, not the terminal's.
+        $cashierA->update(['password' => Hash::make('password123')]);
+        $this->loginAs($cashierA);
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/cash-sessions/open', ['opening_cash' => 500])->assertCreated();
+        $this->assertDatabaseHas('cash_sessions', ['user_id' => $cashierA->id, 'location_id' => 7]);
+    }
     public function test_admin_dashboard_page_is_served(): void
     {
         $this->get('/pos/admin')->assertOk()->assertSee('Admin Dashboard');

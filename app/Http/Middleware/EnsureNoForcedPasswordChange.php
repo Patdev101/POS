@@ -17,6 +17,7 @@ class EnsureNoForcedPasswordChange
         'user',
         'account.email.update',
         'account.password.update',
+        'account.verify-current-password',
     ];
 
     public function handle(Request $request, Closure $next): Response

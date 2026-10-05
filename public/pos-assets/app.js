@@ -53,7 +53,24 @@ const Pos = (function () {
             headers.Authorization = 'Bearer ' + token;
         }
 
-        const response = await fetch('/api' + path, Object.assign({}, options, { headers: headers }));
+        // Some web hosts (IIS/WebDAV on Windows hosting in particular) block
+        // PUT, PATCH and DELETE before they ever reach the app. Send those
+        // as POST with the real method in a header Laravel understands.
+        const method = (options.method || 'GET').toUpperCase();
+        const fetchOptions = Object.assign({}, options, { headers: headers });
+
+        if (method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+            headers['X-HTTP-Method-Override'] = method;
+            fetchOptions.method = 'POST';
+        }
+
+        let response;
+
+        try {
+            response = await fetch('/api' + path, fetchOptions);
+        } catch (networkError) {
+            throw new Error('Can\'t reach the server. Check your connection and try again.');
+        }
 
         if (response.status === 401) {
             clearSession();
@@ -69,7 +86,13 @@ const Pos = (function () {
         const data = await response.json().catch(function () { return {}; });
 
         if (!response.ok) {
-            const error = new Error(data.message || 'Request failed');
+            // No readable message means the reply didn't come from the app
+            // (a host error page, a blocked request...). Say what happened
+            // instead of a bare "Request failed".
+            const fallback = response.status >= 500
+                ? 'The server had a problem (error ' + response.status + '). Please try again in a moment.'
+                : 'The server refused this request (error ' + response.status + '). Please tell your administrator.';
+            const error = new Error(data.message || fallback);
             error.status = response.status;
             error.data = data;
             throw error;
@@ -249,9 +272,42 @@ const Pos = (function () {
         });
     }
 
+    // Every password field gets a Show / Hide button so people can check
+    // what they typed.
+    function enhancePasswordFields() {
+        document.querySelectorAll('input[type="password"]').forEach(function (input) {
+            if (input.closest('.password-field')) {
+                return;
+            }
+
+            const wrapper = document.createElement('span');
+            wrapper.className = 'password-field';
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(input);
+
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'password-toggle';
+            toggle.textContent = 'Show';
+            toggle.setAttribute('aria-label', 'Show password');
+            toggle.setAttribute('aria-pressed', 'false');
+
+            toggle.addEventListener('click', function () {
+                const reveal = input.type === 'password';
+                input.type = reveal ? 'text' : 'password';
+                toggle.textContent = reveal ? 'Hide' : 'Show';
+                toggle.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+                toggle.setAttribute('aria-pressed', reveal ? 'true' : 'false');
+            });
+
+            wrapper.appendChild(toggle);
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         applyRoleNavigation();
         applyPageIntro();
+        enhancePasswordFields();
     });
 
     function initLoginPage() {
@@ -576,6 +632,18 @@ const Pos = (function () {
         // the sum of all of them.
         await Promise.allSettled([
             (async function () {
+                // A user assigned to a location already carries its name, so
+                // the header needs no round trip to Inventory.
+                const assigned = getUser();
+
+                if (assigned && assigned.location_name) {
+                    state.configuredLocationId = assigned.location_id;
+                    state.locationName = assigned.location_name;
+                    document.getElementById('location-badge').textContent = state.locationName;
+
+                    return;
+                }
+
                 try {
                     const locations = await apiFetch('/pos/locations');
                     state.configuredLocationId = locations.configured_location_id;
@@ -760,15 +828,43 @@ const Pos = (function () {
             logout();
         });
 
-        document.getElementById('report-date-input').addEventListener('change', function () {
-            loadStats(getSelectedReportDate());
-            loadSales(getSelectedReportDate());
-        });
+        function reloadReportRange() {
+            const range = getSelectedReportRange();
+
+            // Keep the two fields in step with what is actually loaded
+            // (e.g. after From was set later than To and they were swapped).
+            document.getElementById('report-date-input').value = range.from;
+            document.getElementById('report-date-to-input').value = range.to;
+
+            loadStats(range.from, range.to);
+            loadSales(range.from, range.to);
+        }
+
+        function setReportRange(from, to) {
+            document.getElementById('report-date-input').value = from;
+            document.getElementById('report-date-to-input').value = to;
+            reloadReportRange();
+        }
+
+        function daysAgoString(days) {
+            const d = new Date();
+            d.setDate(d.getDate() - days);
+            return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        }
+
+        document.getElementById('report-date-input').addEventListener('change', reloadReportRange);
+        document.getElementById('report-date-to-input').addEventListener('change', reloadReportRange);
 
         document.getElementById('report-today-btn').addEventListener('click', function () {
-            document.getElementById('report-date-input').value = todayDateString();
-            loadStats(todayDateString());
-            loadSales(todayDateString());
+            setReportRange(todayDateString(), todayDateString());
+        });
+
+        document.getElementById('report-week-btn').addEventListener('click', function () {
+            setReportRange(daysAgoString(6), todayDateString());
+        });
+
+        document.getElementById('report-month-btn').addEventListener('click', function () {
+            setReportRange(todayDateString().slice(0, 8) + '01', todayDateString());
         });
 
         document.getElementById('analytics-month-input').addEventListener('change', function () {
@@ -804,6 +900,7 @@ const Pos = (function () {
 
     async function managerBootstrap() {
         document.getElementById('report-date-input').value = todayDateString();
+        document.getElementById('report-date-to-input').value = todayDateString();
         document.getElementById('analytics-month-input').value = currentMonthString();
 
         // Location badge, the reports section, and the analytics section
@@ -813,6 +910,14 @@ const Pos = (function () {
         // load time.
         await Promise.allSettled([
             (async function () {
+                const assigned = getUser();
+
+                if (assigned && assigned.location_name) {
+                    document.getElementById('location-badge').textContent = assigned.location_name;
+
+                    return;
+                }
+
                 try {
                     const locations = await apiFetch('/pos/locations');
                     const current = (locations.data || []).find(function (l) {
@@ -855,15 +960,21 @@ const Pos = (function () {
         document.getElementById('cashier-name').textContent = user ? user.name : '';
 
         if (user.role === 'admin') {
-            document.getElementById('new-user-role-manager-option').hidden = false;
-            document.getElementById('new-user-role-admin-option').hidden = false;
+            document.querySelectorAll('#add-user-role [data-admin-only]').forEach(function (option) {
+                option.hidden = false;
+            });
         }
 
         document.getElementById('logout-btn').addEventListener('click', function () {
             logout();
         });
 
-        document.getElementById('create-user-form').addEventListener('submit', createUser);
+        document.getElementById('add-user-open-btn').addEventListener('click', openAddUserModal);
+        document.getElementById('add-user-cancel-btn').addEventListener('click', closeAddUserModal);
+        document.getElementById('add-user-form').addEventListener('submit', submitAddUser);
+        bindCompanyLocationSelects('add-user-company', 'add-user-location');
+        bindCompanyLocationSelects('edit-user-company', 'edit-user-location');
+        loadUserLocations();
 
         document.getElementById('edit-user-form').addEventListener('submit', submitEditUser);
         document.getElementById('edit-user-cancel-btn').addEventListener('click', closeEditUserModal);
@@ -875,6 +986,154 @@ const Pos = (function () {
             document.getElementById('page-loader').hidden = true;
             document.getElementById('app').hidden = false;
         });
+    }
+
+    /* ---------------- Company / location pickers (Users page) ---------------- */
+
+    // Companies and locations come from the Inventory system. Each location
+    // carries its company, so the company list is built from the locations.
+    state.userLocations = [];
+
+    async function loadUserLocations() {
+        try {
+            const response = await apiFetch('/pos/locations');
+            state.userLocations = response.data || [];
+        } catch (err) {
+            state.userLocations = [];
+            showError('Companies and locations couldn\'t be loaded from Inventory. You can still add users without a location.');
+        }
+
+        fillCompanySelect('add-user-company', 'add-user-location', null);
+        fillCompanySelect('edit-user-company', 'edit-user-location', null);
+    }
+
+    function companyKey(location) {
+        return location.company_id ? String(location.company_id) : 'none';
+    }
+
+    function fillLocationSelect(companySelectId, locationSelectId, selectedLocationId) {
+        const companyValue = document.getElementById(companySelectId).value;
+        const locationSelect = document.getElementById(locationSelectId);
+        const matches = state.userLocations.filter(function (location) {
+            return companyValue !== '' && companyKey(location) === companyValue;
+        });
+
+        locationSelect.disabled = companyValue === '';
+        locationSelect.innerHTML =
+            '<option value="">' + (companyValue === '' ? 'Select a company first' : 'Select a location') + '</option>' +
+            matches.map(function (location) {
+                return '<option value="' + location.id + '"' +
+                    (String(location.id) === String(selectedLocationId) ? ' selected' : '') + '>' +
+                    escapeHtml(location.name + (location.code ? ' (' + location.code + ')' : '')) + '</option>';
+            }).join('');
+
+        // A company with one location: pick it for them.
+        if (!selectedLocationId && matches.length === 1) {
+            locationSelect.value = String(matches[0].id);
+        }
+    }
+
+    function fillCompanySelect(companySelectId, locationSelectId, selectedLocationId) {
+        const companySelect = document.getElementById(companySelectId);
+
+        if (!companySelect) {
+            return;
+        }
+
+        const companies = {};
+        state.userLocations.forEach(function (location) {
+            companies[companyKey(location)] = location.company_name || 'No company';
+        });
+
+        const selected = state.userLocations.find(function (location) {
+            return String(location.id) === String(selectedLocationId);
+        });
+
+        companySelect.innerHTML = '<option value="">Select a company</option>' +
+            Object.keys(companies).map(function (key) {
+                return '<option value="' + key + '"' + (selected && companyKey(selected) === key ? ' selected' : '') + '>' +
+                    escapeHtml(companies[key]) + '</option>';
+            }).join('');
+
+        fillLocationSelect(companySelectId, locationSelectId, selectedLocationId);
+    }
+
+    function bindCompanyLocationSelects(companySelectId, locationSelectId) {
+        document.getElementById(companySelectId).addEventListener('change', function () {
+            fillLocationSelect(companySelectId, locationSelectId, null);
+        });
+    }
+
+    /* ---------------- Add user modal ---------------- */
+
+    function openAddUserModal() {
+        document.getElementById('add-user-form').reset();
+        document.getElementById('add-user-error').hidden = true;
+        fillCompanySelect('add-user-company', 'add-user-location', null);
+        document.getElementById('add-user-modal').hidden = false;
+        document.getElementById('add-user-name').focus();
+    }
+
+    function closeAddUserModal() {
+        document.getElementById('add-user-modal').hidden = true;
+    }
+
+    async function submitAddUser(e) {
+        e.preventDefault();
+
+        const errorBox = document.getElementById('add-user-error');
+        errorBox.hidden = true;
+
+        const name = document.getElementById('add-user-name').value.trim();
+        const email = document.getElementById('add-user-email').value.trim();
+        const password = document.getElementById('add-user-password').value;
+        const companyValue = document.getElementById('add-user-company').value;
+        const locationValue = document.getElementById('add-user-location').value;
+
+        let problem = '';
+
+        if (!name) {
+            problem = 'Enter the person\'s full name.';
+        } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+            problem = 'Enter a valid email address.';
+        } else if (password.length < 8) {
+            problem = 'The temporary password must be at least 8 characters.';
+        } else if (companyValue !== '' && locationValue === '') {
+            problem = 'Choose a location for the selected company.';
+        }
+
+        if (problem) {
+            errorBox.textContent = problem;
+            errorBox.hidden = false;
+            return;
+        }
+
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.classList.add('is-loading');
+
+        try {
+            await apiFetch('/users', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: name,
+                    email: email,
+                    password: password,
+                    role: document.getElementById('add-user-role').value,
+                    location_id: locationValue ? parseInt(locationValue, 10) : null,
+                }),
+            });
+
+            closeAddUserModal();
+            await loadUsers();
+            showSuccess('User added. Give them the temporary password.');
+        } catch (err) {
+            errorBox.textContent = err.data && err.data.message ? err.data.message : err.message;
+            errorBox.hidden = false;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('is-loading');
+        }
     }
 
     /* ---------------- Audit log (manager/admin only) ---------------- */
@@ -1136,7 +1395,7 @@ const Pos = (function () {
             state.users = response.data || [];
             renderUsersTable();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Unable to load users.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Unable to load users.</td></tr>';
         }
     }
 
@@ -1148,7 +1407,7 @@ const Pos = (function () {
         const actorIsAdmin = !!(currentUser && currentUser.role === 'admin');
 
         if (state.users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No users found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No users found.</td></tr>';
             return;
         }
 
@@ -1172,7 +1431,7 @@ const Pos = (function () {
                 ? '<span class="role-badge status-completed">Active</span>'
                 : '<span class="role-badge status-voided">Inactive</span>';
 
-            let passwordCellHtml = '<span class="table-empty" style="padding:0;">&mdash;</span>';
+            let passwordCellHtml = '<span style="color:var(--muted);">&mdash;</span>';
             let actionsHtml = '<a href="/pos/account" class="row-action-btn view">My Account</a>';
 
             if (!isSelf && canEdit) {
@@ -1189,10 +1448,16 @@ const Pos = (function () {
                 actionsHtml = '';
             }
 
+            const locationHtml = targetUser.location_name
+                ? escapeHtml(targetUser.location_name) +
+                    (targetUser.company_name ? '<br><small style="color:var(--muted);">' + escapeHtml(targetUser.company_name) + '</small>' : '')
+                : '<span style="color:var(--muted);">Not set</span>';
+
             row.innerHTML =
                 '<td>' + escapeHtml(targetUser.name) + '</td>' +
                 '<td>' + escapeHtml(targetUser.email) + '</td>' +
-                '<td class="table-empty" style="padding:0;">' + passwordCellHtml + '</td>' +
+                '<td>' + locationHtml + '</td>' +
+                '<td>' + passwordCellHtml + '</td>' +
                 '<td>' + roleControl + '</td>' +
                 '<td>' + statusBadgeHtml + '</td>' +
                 '<td>' + actionsHtml + '</td>';
@@ -1243,6 +1508,7 @@ const Pos = (function () {
         document.getElementById('edit-user-id').value = targetUser.id;
         document.getElementById('edit-user-name').value = targetUser.name;
         document.getElementById('edit-user-email').value = targetUser.email;
+        fillCompanySelect('edit-user-company', 'edit-user-location', targetUser.location_id);
         document.getElementById('edit-user-error').hidden = true;
 
         document.getElementById('edit-user-modal').hidden = false;
@@ -1265,6 +1531,20 @@ const Pos = (function () {
             name: document.getElementById('edit-user-name').value,
             email: document.getElementById('edit-user-email').value,
         };
+
+        // Leave the saved location alone if Inventory couldn't be reached
+        // to list the choices; otherwise send what was picked.
+        if (state.userLocations.length > 0) {
+            const locationValue = document.getElementById('edit-user-location').value;
+
+            if (document.getElementById('edit-user-company').value !== '' && locationValue === '') {
+                errorBox.textContent = 'Choose a location for the selected company.';
+                errorBox.hidden = false;
+                return;
+            }
+
+            payload.location_id = locationValue ? parseInt(locationValue, 10) : null;
+        }
 
         try {
             await apiFetch('/users/' + userId, {
@@ -1396,48 +1676,46 @@ const Pos = (function () {
         }
     }
 
-    async function createUser(e) {
-        e.preventDefault();
-
-        const errorBanner = document.getElementById('create-user-error');
-        errorBanner.hidden = true;
-
-        const payload = {
-            name: document.getElementById('new-user-name').value,
-            email: document.getElementById('new-user-email').value,
-            password: document.getElementById('new-user-password').value,
-            role: document.getElementById('new-user-role').value,
-        };
-
-        try {
-            await apiFetch('/users', {
-                method: 'POST',
-                body: JSON.stringify(payload),
-            });
-
-            document.getElementById('create-user-form').reset();
-            await loadUsers();
-        } catch (err) {
-            errorBanner.textContent = err.data && err.data.message ? err.data.message : err.message;
-            errorBanner.hidden = false;
-        }
-    }
-
     function getSelectedReportDate() {
         const input = document.getElementById('report-date-input');
         return (input && input.value) || todayDateString();
     }
 
+    // The sales report covers From..To. The cashier screen has no date
+    // fields, so it falls back to today.
+    function getSelectedReportRange() {
+        const toInput = document.getElementById('report-date-to-input');
+        let from = getSelectedReportDate();
+        let to = (toInput && toInput.value) || from;
+
+        if (to < from) {
+            const swap = from;
+            from = to;
+            to = swap;
+        }
+
+        return { from: from, to: to };
+    }
+
+    function reportRangeLabel(from, to) {
+        if (from !== to) {
+            return from + ' to ' + to;
+        }
+
+        return from === todayDateString() ? 'today (' + from + ')' : from;
+    }
+
     async function refreshReports() {
-        const date = getSelectedReportDate();
+        const range = getSelectedReportRange();
+        const date = range.from;
 
         // Three independent reads (today's totals, the sales table, the
         // recent-receipts list) — running them together instead of one
         // after another is what actually shortens the wait, since none of
         // them need each other's data.
         await Promise.allSettled([
-            loadStats(date),
-            loadSales(date),
+            loadStats(date, range.to),
+            loadSales(date, range.to),
             loadRecentReceipts(),
         ]);
     }
@@ -1596,7 +1874,7 @@ const Pos = (function () {
         }).join('') + (notSold.length > 10 ? '<p class="table-empty">+' + (notSold.length - 10) + ' more not sold this month.</p>' : '');
     }
 
-    async function loadSales(date) {
+    async function loadSales(date, toDate) {
         const tbody = document.getElementById('reports-table-body');
 
         if (!tbody) {
@@ -1605,7 +1883,7 @@ const Pos = (function () {
 
         try {
             const allParam = isManagerRole() ? '&all=1' : '';
-            const response = await apiFetch('/sales?from=' + encodeURIComponent(date) + '&to=' + encodeURIComponent(date) + allParam);
+            const response = await apiFetch('/sales?from=' + encodeURIComponent(date) + '&to=' + encodeURIComponent(toDate || date) + allParam);
             state.sales = response.data || [];
             renderSalesTable();
             renderCashierBreakdown();
@@ -1648,7 +1926,8 @@ const Pos = (function () {
             ];
         });
 
-        const dateLabel = document.getElementById('report-date-input').value || todayDateString();
+        const range = getSelectedReportRange();
+        const dateLabel = range.from === range.to ? range.from : range.from + '_to_' + range.to;
         downloadCsv('sales-report-' + dateLabel + '.csv', headers, rows);
     }
 
@@ -1756,9 +2035,9 @@ const Pos = (function () {
             label.textContent = 'Showing ' + monthLabel(monthStr);
             renderCashierBreakdownInto('cashier-breakdown-body', state.monthlySales || [], 'No sales this month.');
         } else {
-            const dateStr = getSelectedReportDate();
-            label.textContent = dateStr === todayDateString() ? 'Showing today (' + dateStr + ')' : 'Showing ' + dateStr;
-            renderCashierBreakdownInto('cashier-breakdown-body', state.sales, 'No sales for this date.');
+            const range = getSelectedReportRange();
+            label.textContent = 'Showing ' + reportRangeLabel(range.from, range.to);
+            renderCashierBreakdownInto('cashier-breakdown-body', state.sales, 'No sales for these dates.');
         }
     }
 
@@ -1863,11 +2142,11 @@ const Pos = (function () {
         tbody.innerHTML = '';
 
         if (state.sales.length === 0) {
-            const selectedDate = document.getElementById('report-date-input').value;
-            const isFuture = selectedDate && selectedDate > todayDateString();
+            const range = getSelectedReportRange();
+            const isFuture = range.from > todayDateString();
             const message = isFuture
-                ? 'That date is in the future — no sales exist yet.'
-                : 'No sales recorded for this date.';
+                ? 'Those dates are in the future — no sales exist yet.'
+                : 'No sales recorded for ' + reportRangeLabel(range.from, range.to) + '.';
             tbody.innerHTML = '<tr><td colspan="8" class="table-empty">' + message + '</td></tr>';
             return;
         }
@@ -2282,19 +2561,18 @@ const Pos = (function () {
         }
     }
 
-    async function loadStats(date) {
+    async function loadStats(date, toDate) {
         try {
+            toDate = toDate || date;
             const allParam = isManagerRole() ? '&all=1' : '';
-            const response = await apiFetch('/sales/summary?from=' + encodeURIComponent(date) + '&to=' + encodeURIComponent(date) + allParam);
+            const response = await apiFetch('/sales/summary?from=' + encodeURIComponent(date) + '&to=' + encodeURIComponent(toDate) + allParam);
             const meta = response.meta || {};
             document.getElementById('stat-completed').textContent = meta.total_sales || 0;
             document.getElementById('stat-total').textContent = money(meta.total_amount || 0);
             document.getElementById('stat-voided').textContent = meta.voided_sales || 0;
 
             const label = document.getElementById('stats-date-label');
-            label.textContent = date === todayDateString()
-                ? 'Showing sales for today (' + date + ')'
-                : 'Showing sales for ' + date;
+            label.textContent = 'Showing sales for ' + reportRangeLabel(date, toDate);
         } catch (err) {
             /* stats are non-critical; ignore failures */
         }
@@ -3441,6 +3719,25 @@ const Pos = (function () {
             const roleBadge = document.getElementById('account-role-badge');
             roleBadge.className = 'role-badge' + (user ? ' role-' + user.role : '');
             roleBadge.textContent = user ? capitalize(user.role) : '';
+
+            // Name and email are changed by a manager or admin, not by the person
+            // themselves; and while a new password is required nothing else on
+            // this page can be edited.
+            const mustChange = !!(user && user.must_change_password);
+            const notManager = !!(user && user.role !== 'manager' && user.role !== 'admin');
+            const locked = mustChange || notManager;
+
+            ['change-name-form', 'change-email-form'].forEach(function (formId) {
+                document.querySelectorAll('#' + formId + ' input, #' + formId + ' button').forEach(function (el) {
+                    el.disabled = locked;
+                });
+            });
+
+            const lockedNote = document.getElementById('profile-locked-note');
+            lockedNote.textContent = notManager
+                ? 'Your name and email can only be changed by a manager or an admin. Ask one of them if something needs correcting.'
+                : 'Your name and email can be changed after you set your new password below.';
+            lockedNote.hidden = !locked;
 
             if (user && user.must_change_password) {
                 document.getElementById('forced-change-notice').hidden = false;

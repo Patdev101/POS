@@ -3657,6 +3657,72 @@ padding: 36px 16px;
 font-size: 14px;
 }
 
+/* ---- Main action button beside a section heading ---- */
+
+.primary-action-btn {
+flex: none;
+width: auto;
+padding: 9px 16px;
+border: 0;
+border-radius: 8px;
+background: var(--primary);
+color: #ffffff;
+font-size: 13px;
+font-weight: 700;
+cursor: pointer;
+transition: background-color .15s ease;
+}
+
+.primary-action-btn:hover {
+background: var(--primary-dark);
+}
+
+/* ---- Password fields: Show / Hide button inside the field ---- */
+
+.password-field {
+position: relative;
+display: block;
+}
+
+.password-field input {
+width: 100%;
+padding-right: 64px !important;
+}
+
+.password-field .password-toggle,
+.login-panel .password-field .password-toggle {
+position: absolute;
+top: 50%;
+right: 6px;
+transform: translateY(-50%);
+width: auto;
+margin: 0;
+padding: 6px 8px;
+border: 0;
+border-radius: 6px;
+background: transparent;
+color: var(--primary-dark);
+font-size: 12px;
+font-weight: 700;
+line-height: 1;
+cursor: pointer;
+display: inline-block;
+}
+
+.password-field .password-toggle:hover,
+.login-panel .password-field .password-toggle:hover {
+background: var(--primary-soft);
+}
+
+/* ---- Disabled form fields read clearly as locked ---- */
+
+.account-form input:disabled,
+.account-form button:disabled {
+background: #f1f5f9;
+color: #94a3b8;
+cursor: not-allowed;
+}
+
 /* ---- "Showing ..." range labels: line up with the heading above ---- */
 
 .range-label {

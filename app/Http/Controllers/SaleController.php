@@ -33,6 +33,7 @@ class SaleController extends Controller
             'payments',
         ])
             ->when(!$viewAll, fn ($query) => $query->where('user_id', $user->id))
+            ->tap(fn ($query) => $this->scopeToLocation($query, $user))
             ->when($from, fn ($query) => $query->whereDate('created_at', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('created_at', '<=', $to))
             ->latest()
@@ -61,6 +62,7 @@ class SaleController extends Controller
 
         $completedSales = Sale::query()
             ->when(!$viewAll, fn ($query) => $query->where('user_id', $user->id))
+            ->tap(fn ($query) => $this->scopeToLocation($query, $user))
             ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)
@@ -68,6 +70,7 @@ class SaleController extends Controller
 
         $voidedSales = Sale::query()
             ->when(!$viewAll, fn ($query) => $query->where('user_id', $user->id))
+            ->tap(fn ($query) => $this->scopeToLocation($query, $user))
             ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)
@@ -102,6 +105,7 @@ class SaleController extends Controller
         $sales = Sale::query()
             ->with('payments')
             ->when(!$viewAll, fn ($query) => $query->where('user_id', $user->id))
+            ->tap(fn ($query) => $this->scopeToLocation($query, $user))
             ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
             ->whereBetween('created_at', [
                 $from . ' 00:00:00',
@@ -138,7 +142,7 @@ class SaleController extends Controller
             ], 401);
         }
 
-        if ($sale->user_id !== $user->id && !$user->isManager()) {
+        if (!$this->canAccessSale($user, $sale)) {
             return response()->json([
                 'message' => 'You are not allowed to view this receipt.',
             ], 403);
@@ -190,7 +194,7 @@ class SaleController extends Controller
         $user = $request->user();
 
         abort_if(!$user, 401, 'Unauthenticated.');
-        abort_if($sale->user_id !== $user->id && !$user->isManager(), 403, 'You are not allowed to view this receipt.');
+        abort_if(!$this->canAccessSale($user, $sale), 403, 'You are not allowed to view this receipt.');
 
         $sale->load(['items', 'payments', 'customer', 'user']);
 
@@ -287,7 +291,7 @@ class SaleController extends Controller
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        if ($sale->user_id !== $user->id && !$user->isManager()) {
+        if (!$this->canAccessSale($user, $sale)) {
             return response()->json([
                 'message' => 'You are not allowed to void this sale.',
             ], 403);
@@ -402,7 +406,7 @@ class SaleController extends Controller
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        if ($sale->user_id !== $user->id && !$user->isManager()) {
+        if (!$this->canAccessSale($user, $sale)) {
             return response()->json([
                 'message' => 'You are not allowed to refund this sale.',
             ], 403);
@@ -493,5 +497,29 @@ class SaleController extends Controller
             'restocked' => $restocked,
             'warnings' => $warnings,
         ], 200);
+    }
+
+    /** A manager only sees sales made at their own location. */
+    private function scopeToLocation($query, $user): void
+    {
+        if ($locationId = $user->accessLocationId()) {
+            $query->where('location_id', $locationId);
+        }
+    }
+
+    /** Your own sales, or a manager's for their own location (admins: any). */
+    private function canAccessSale($user, Sale $sale): bool
+    {
+        if ($sale->user_id === $user->id) {
+            return true;
+        }
+
+        if (!$user->isManager()) {
+            return false;
+        }
+
+        $locationId = $user->accessLocationId();
+
+        return $locationId === null || (int) $sale->location_id === $locationId;
     }
 }

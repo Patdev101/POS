@@ -87,9 +87,13 @@
                 <p class="section-eyebrow">Sales Reports (all cashiers)</p>
 
                 <div class="report-date-filter">
-                    <label for="report-date-input">Date</label>
+                    <label for="report-date-input">From</label>
                     <input type="date" id="report-date-input">
+                    <label for="report-date-to-input">To</label>
+                    <input type="date" id="report-date-to-input">
                     <button type="button" id="report-today-btn" class="refresh-link">Today</button>
+                    <button type="button" id="report-week-btn" class="refresh-link">Last 7 days</button>
+                    <button type="button" id="report-month-btn" class="refresh-link">This month</button>
                     <button type="button" id="report-export-csv-btn" class="refresh-link">Export CSV</button>
                 </div>
             </div>

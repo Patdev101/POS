@@ -37,9 +37,46 @@ class AccountManagementTest extends TestCase
             ->assertJsonPath('email', 'view-own@example.com');
     }
 
+    public function test_a_cashier_cannot_change_their_own_name_or_email(): void
+    {
+        $cashier = User::factory()->create([
+            'role' => 'cashier',
+            'name' => 'Original Name',
+            'email' => 'cashier.fixed@example.com',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $this->loginAs($cashier);
+
+        $this->putJson('/api/account/name', ['name' => 'Someone Else'])->assertForbidden();
+        $this->putJson('/api/account/email', [
+            'email' => 'new.address@example.com',
+            'current_password' => 'password123',
+        ])->assertForbidden();
+
+        $this->assertSame('Original Name', $cashier->fresh()->name);
+        $this->assertSame('cashier.fixed@example.com', $cashier->fresh()->email);
+
+        // Their password is still theirs to change.
+        $this->putJson('/api/account/password', [
+            'current_password' => 'password123',
+            'password' => 'a-new-password-1',
+            'password_confirmation' => 'a-new-password-1',
+        ])->assertOk();
+    }
+
+    public function test_a_manager_can_change_their_own_name(): void
+    {
+        $manager = User::factory()->create(['role' => 'manager', 'password' => Hash::make('password123')]);
+        $this->loginAs($manager);
+
+        $this->putJson('/api/account/name', ['name' => 'Renamed Manager'])->assertOk();
+        $this->assertSame('Renamed Manager', $manager->fresh()->name);
+    }
     public function test_user_can_change_own_email_with_correct_current_password(): void
     {
         $user = User::factory()->create([
+            'role' => 'manager',
             'email' => 'old-email@example.com',
             'password' => Hash::make('correct-password'),
         ]);
@@ -57,6 +94,7 @@ class AccountManagementTest extends TestCase
     public function test_user_cannot_change_email_without_correct_current_password(): void
     {
         $user = User::factory()->create([
+            'role' => 'manager',
             'email' => 'old-email2@example.com',
             'password' => Hash::make('correct-password'),
         ]);
@@ -76,6 +114,7 @@ class AccountManagementTest extends TestCase
         $existing = User::factory()->create(['email' => 'taken@example.com']);
 
         $user = User::factory()->create([
+            'role' => 'manager',
             'email' => 'has-own-email@example.com',
             'password' => Hash::make('correct-password'),
         ]);

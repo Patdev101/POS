@@ -26,4 +26,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // A dropped or unreachable database must never show its raw error
+        // (server address, database name, SQL) to whoever is at the till.
+        // The real error still goes to the log.
+        $exceptions->render(function (\PDOException $e, Request $request) {
+            if ($e instanceof \Illuminate\Database\UniqueConstraintViolationException) {
+                return null;
+            }
+
+            $message = 'The system can\'t reach its database right now. Please try again in a moment.';
+
+            return $request->is('api/*') || $request->expectsJson()
+                ? response()->json(['message' => $message], 503)
+                : response($message, 503);
+        });
     })->create();

@@ -12,7 +12,7 @@ class PosProductController extends Controller
     public function index(Request $request, InventoryService $inventoryService): JsonResponse
     {
         $search = trim((string) $request->query('search', ''));
-        $locationId = (int) config('pos.location_id');
+        $locationId = $this->locationFor($request);
 
         try {
             $inventoryService->assertTaxRateMatchesInventory();
@@ -58,7 +58,7 @@ class PosProductController extends Controller
         ]);
 
         $code = strtolower(trim($validated['code']));
-        $locationId = (int) config('pos.location_id');
+        $locationId = $this->locationFor($request);
 
         try {
             $inventoryService->assertTaxRateMatchesInventory();
@@ -86,7 +86,7 @@ class PosProductController extends Controller
         ]);
     }
 
-    public function locations(InventoryService $inventoryService): JsonResponse
+    public function locations(Request $request, InventoryService $inventoryService): JsonResponse
     {
         try {
             $locations = $inventoryService->getLocations();
@@ -95,12 +95,14 @@ class PosProductController extends Controller
         }
 
         return response()->json([
-            'configured_location_id' => (int) config('pos.location_id'),
+            'configured_location_id' => $this->locationFor($request),
             'data' => collect($locations)
                 ->map(fn (array $location) => [
                     'id' => (int) ($location['id'] ?? 0),
                     'name' => $location['name'] ?? null,
                     'code' => $location['code'] ?? null,
+                    'company_id' => isset($location['company']['id']) ? (int) $location['company']['id'] : null,
+                    'company_name' => $location['company']['name'] ?? null,
                 ])
                 ->values(),
         ]);
@@ -157,5 +159,13 @@ class PosProductController extends Controller
                 ];
             })->values()->all(),
         ];
+    }
+
+    /** The signed-in user's own location, else the terminal's configured one. */
+    private function locationFor(Request $request): int
+    {
+        $user = $request->user();
+
+        return $user && $user->location_id ? (int) $user->location_id : (int) config('pos.location_id');
     }
 }

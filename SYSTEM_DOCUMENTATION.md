@@ -11,6 +11,81 @@ This file is the canonical, up-to-date reference for this project. If another AI
 
 ---
 
+## READ FIRST — Handover update, 2026-10-05 (everything since 2026-09-18)
+
+> Newer than every section below it. Where an older section disagrees with this one, **this one is correct**. Companion file: `Inventory-System/SYSTEM_DOCUMENTATION.md` (same kind of update).
+
+### A. Where things are now (corrections to older sections)
+
+| Item | Now |
+|---|---|
+| POS code | `C:\Users\Temp\Documents\GitHub\POS` (the old `possystem/` and `c:\projects\shogun\...` paths in older sections are gone) |
+| Inventory code | `C:\Users\Temp\Documents\GitHub\Inventory-System` — **the repo root is the app**. A stale copy in `inventory/` was deleted 2026-10-05 |
+| Ports | POS `8002`, Inventory `8001`. Port `8003` is an unrelated "reception preview" page — if `INVENTORY_API_URL` ever points at the wrong port the POS now says so ("not the Inventory system") |
+| POS database | **SQL Server, database `possystem`** on `.\SQLEXPRESS` (named pipe host in `.env`). SQLite still works (tests use in-memory SQLite). `possystem.bak` in the folder is an untracked backup — never commit it |
+| Tests | **74 passing** (`php artisan test`). `phpunit.xml` pins `INVENTORY_API_URL=http://127.0.0.1:8001` + a fake token and `tests/TestCase.php` calls `Http::preventStrayRequests()`, so tests can never hit a real Inventory server |
+| Admin account | Created on first run at `/pos/setup` or `php artisan pos:create-admin` (no seeded demo admin on a clean install) |
+
+SQL Server changes made to old migrations (SQLite behaves as before): `noActionOnDelete()` instead of `restrictOnDelete()`; `variance_approved_by` FK uses NO ACTION on SQL Server; `sales.idempotency_key` unique index is a **filtered** index (`WHERE idempotency_key IS NOT NULL`) because SQL Server treats NULL as a value in a plain unique index.
+
+New migrations (run `php artisan migrate --force`): `2026_10_05_000000_add_company_and_location_to_users_table` (users.`location_id`, `location_name`, `company_name`) and `2026_10_05_000100_turn_off_sql_server_auto_close` (stops SQL Server Express closing the database when idle — it made the first click after idle take 1–2.5 s).
+
+### B. Roles and screens (changed — this is a hard rule now)
+
+- **Only cashiers sell.** `POST /api/pos/checkout` and `POST /api/cash-sessions/open` return **403** for manager and admin (`PosCheckoutController::store`, `CashSessionController::open`). A manager/admin who still has a register open from before may reach `/pos` only to close it.
+- **Cashier** → `/pos`. **Manager** → `/pos/manager` (Manager Console). **Admin** → `/pos/admin` (new Admin Dashboard, `resources/views/pos/admin.blade.php`, `Pos.initAdminPage()`); the old console is reachable for admins as "Sales Reports".
+- `homePath()` in `app.js` decides where each role lands; `applyRoleNavigation()` rebuilds the header menu for managers/admins on every page (same order everywhere, current page highlighted). Cashiers keep each page's own links.
+- Managers/admins can still: view all reports, void/refund, manage users, read the audit log, approve a cashier's cash variance (> `POS_CASH_VARIANCE_THRESHOLD`, default ₱200).
+- **Opening cash is required and must be > 0** (field starts empty; enforced in JS and in `CashSessionController::open`: `required|numeric|gt:0|max:9999999`).
+
+### C. Company / location per user (new)
+
+- Each user can have a **location** (and its **company**). Companies and locations live in Inventory; the POS stores `location_id` plus the *names as of assignment* (`location_name`, `company_name`) so screens show them without calling Inventory.
+- Inventory's `GET /api/locations` now returns `company: {id, name}`; the POS `GET /api/pos/locations` returns `company_id`/`company_name` per location.
+- `UserController` (POS): `resolveLocation()` looks the chosen location up in Inventory and stores its names; unknown id → 422; Inventory unreachable → 503.
+- **Add User** is one button (modal) with name, email, temporary password, role, Company → Location (location list narrows to the company). Edit has the same pickers. Table column "Company / Location".
+- `User::accessLocationId()` = the location a *non-admin* is limited to (null for admins or accounts with no location). Used for:
+  - **Cashier's register opens at the user's location** (`CashSessionController`); checkout already sells from the session's location. Fallback for an account with no location: terminal `POS_LOCATION_ID`.
+  - **Product stock shown** = stock at the user's location (`PosProductController::locationFor`).
+  - **Manager sees only their own location's** sales, summary and report, and can open/void/refund only those (`SaleController::scopeToLocation`, `canAccessSale`), and sees/creates/manages only people at their location (`UserController::outsideLocation`; a manager's new users are forced to the manager's location). A manager **without** a location is unrestricted (backwards compatible). Admins are never restricted.
+  - **Header location badge** uses the saved `location_name`; no Inventory call. (The "Unable to load POS location… inventory service may be offline" banner means Inventory is not running or `INVENTORY_API_URL` is wrong — assigning a location removes that one banner but product loading still needs Inventory.)
+- **Known gaps:** the Audit Log is not location-filtered; product *catalog* is shared (only the stock number is per-location); the POS does not stop a cashier with no location from selling at the terminal's `POS_LOCATION_ID`.
+
+### D. Reports
+
+Sales report has **From / To** dates plus Today / Last 7 days / This month. `getSelectedReportRange()`, `loadSales(from,to)`, `loadStats(from,to)`; the CSV filename carries the range; the cashier screen (no date fields) still means "today". Backend already accepted `from`/`to`.
+
+### E. Security / reliability changes
+
+- **PUT/PATCH/DELETE are sent as POST + `X-HTTP-Method-Override`** (`apiFetch` in `app.js`). Windows/IIS hosting often blocks those verbs, which showed as "Request failed" when saving a new password. If a new endpoint uses PUT/PATCH/DELETE it works automatically.
+- `apiFetch` now reports "Can't reach the server…" on network failure and a readable error number when the reply isn't from the app (no more bare "Request failed").
+- **A database failure never shows raw SQL to the user**: `bootstrap/app.php` renders a generic 503 for `PDOException` (details stay in the log). This came from a deployed screenshot showing the SQL Server error text on the login page.
+- **Name and email are read-only for cashiers** (2026-10-05). `AccountController::updateName/updateEmail` return 403 unless the user is a manager or admin, and the My Account page disables those two forms with an explanatory note. A cashier's details are changed by a manager/admin from Manage Users → Edit. Password changes stay self-service for everyone.
+- Forced password change: profile (name/email) is read-only until the new password is set; `account.verify-current-password` is allowed during the lock (`EnsureNoForcedPasswordChange`). Every password field has Show/Hide (`enhancePasswordFields`).
+- `.env.production`: `CACHE_STORE=file` (login throttling uses the cache; it must keep working if the database drops). Set `APP_NAME` (a deployed login page showed "Laravel").
+- If the server shows `SQLSTATE[08S01] … connection forcibly closed`: check SQL Server connection limits / `DB_ENCRYPT=no` / AUTO_CLOSE (migration above) — it was not reproduced locally.
+
+### F. UI system (read before touching CSS)
+
+- `public/pos-assets/style.css` ends with a **"SHARED UI SYSTEM"** block (page intro, stat cards with icon tiles, link cards, empty states, `.range-label`, `.password-field`, `.primary-action-btn`, focus ring, `.is-current` nav). Keep new screens on these classes.
+- Every Blade page links the stylesheet with `?v={{ filemtime(...) }}`; keep that so browsers pick up CSS changes.
+- **Recurring bug class:** a CSS `display:` rule overrides the HTML `hidden` attribute. Any element toggled with `.hidden` needs an explicit `[hidden]{display:none}` rule.
+- Manager Console and Admin Dashboard share stat-card markup; the admin page shows today + last 7 days, team by role, recent audit events.
+
+### G. Other changes worth knowing
+
+- `InventoryService::getProduct()` was removed; checkout fetches the catalog **once** and keys it by id (`PosCheckoutController`). `jsonList()` throws a clear error if Inventory's reply isn't JSON.
+- Docs/handover files kept **outside the repo** in `C:\Users\Temp\Documents\GitHub\`: `POS-User-Guide.pdf`, `POS-System-Flowchart.pdf`, `Inventory-System-Flowchart.pdf`.
+- Deploy on Plesk: document root = `public`, PHP 8.3/8.4, `composer install --no-dev`, `php artisan migrate --force`, then the cache commands. Both apps need the same `INVENTORY_API_TOKEN`; deploy **Inventory first** (the POS depends on the company field it now returns).
+
+### H. Suggested next steps
+
+1. Decide whether a cashier with no location should be blocked from selling (today it falls back to `POS_LOCATION_ID`).
+2. Location-filter the Audit Log for managers.
+3. Optional: auto-print receipts after checkout (currently manual: View Receipt → Print / Print to USB).
+4. Move the POS off SQLite/SQL Server Express limits if many registers will run concurrently.
+
+---
 ## Setting This Up for the First Time? Read This First
 
 **If you're the business receiving this project (not the intern who built it), start here — this is a one-time setup, not something you need the rest of this document for yet.**

@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
-#[Fillable(['name', 'email', 'password', 'role', 'is_active', 'must_change_password'])]
+#[Fillable(['name', 'email', 'password', 'role', 'is_active', 'must_change_password', 'location_id', 'location_name', 'company_name'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -64,4 +64,13 @@ public function cashSessions(): HasMany
 
 
 
+
+    /**
+     * The location a manager or cashier is limited to, or null when they
+     * are not limited (admins, or an account with no location yet).
+     */
+    public function accessLocationId(): ?int
+    {
+        return !$this->isAdmin() && $this->location_id ? (int) $this->location_id : null;
+    }
 }
